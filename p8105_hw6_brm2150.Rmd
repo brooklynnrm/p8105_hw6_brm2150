@@ -37,7 +37,7 @@ homicide_dat =
            disposition %in% c("Closed without arrest", "Closed by arrest") ~ 0,
            disposition == "Open/No arrest" ~ 1
            )) |>
-  filter(city_state != c("Dallas, TX", "Phoenix, AZ", "Kansas City, MO", "Tulsa, AL"),
+  filter(!city_state %in% c("Dallas, TX", "Phoenix, AZ", "Kansas City, MO", "Tulsa, AL"),
          victim_race %in% c("White", "Black"))
 
 head(homicide_dat)
@@ -50,10 +50,47 @@ baltimore_glm =
   filter(city_state == "Baltimore, MD") |>
   glm(status ~ victim_age + victim_race + victim_sex, data = _, family = "binomial")
 
-broom::tidy(baltimore_glm)
+tidy_results = broom::tidy(baltimore_glm, conf.int = TRUE, exponentiate = TRUE)
 
-## need to add in the odds ration using exp()
+# show odds ratio for men
+tidy_results |>
+  filter(term == "victim_sexMale") |>
+  select(-c(std.error, statistic, p.value))
 ```
 
+Now let's map this across all of the cities, and then plot the odds ratios for murders of men being solved compared to compare across cities.
+
+```{r}
+citywide_odds = 
+  homicide_dat |>
+  group_by(city_state) |>
+  nest() |>
+  mutate(
+    glm = map(data, \(df) glm(status ~ victim_age + victim_race + victim_sex, data = df, family = "binomial")),
+    glm = map(glm, \(i) broom::tidy(i, conf.int = TRUE, exponentiate = TRUE)),
+  ) |>
+  unnest(glm) |>
+  filter(term == "victim_sexMale")
+
+citywide_odds |>
+  ggplot(aes(x = factor(city_state, levels = citywide_odds$city_state[order(citywide_odds$estimate)]), y = estimate))+
+  geom_point() +
+  geom_errorbar(aes(ymin = conf.low, ymax = conf.high)) +
+  geom_hline(yintercept = 1, linetype = "dashed", color = "red") +
+  theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)) +
+  labs(title = "Odds Ratios for Homicides Status by Sex",
+       x = ("City, State"),
+       y = "odds ratio")
+```
+It looks like most cities have a higher ratio of homicides of men getting solved than to women. The city where the highest ratio is in New York. Long Beach, CA has a very wide confidence interval, but even so the interquantile range does not include an odds ratio that men's homcides are not solved more often. 
 
 ## Problem 3
+
+Read in the birthweight data. 
+
+```{r}
+birthweight_df = 
+  read_csv("data/birthweight.csv")
+```
+

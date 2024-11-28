@@ -6,6 +6,8 @@ output: github_document
 ---
 ```{r setup, include=FALSE}
 library(tidyverse)
+library(plotly)
+library(modelr)
 
 knitr::opts_chunk$set(
   comment = '', fig.width = 8, fig.height = 6, out.width = "90%"
@@ -132,11 +134,79 @@ single_mod_results =
   filter(term != "(Intercept)")
 ```
 
-Let's look at how all of the predictors did.
+Let's look at how all of the predictors did. In this dataset it looks like there is no variation for the number of previous low birthweight babies or low weight for gestational age babies. We will leave out these moving forward.
 
 ```{r}
-single_mod_results |>
+ggplotly(single_mod_results |>
   ggplot(aes(x = term, y = log(p.value))) +
+  geom_point() +
+  geom_hline(yintercept = log(0.05), linetype = "dashed", color = "red") +
+theme(
+    axis.text.x = element_text(angle = 45, hjust = 1)))
+```
+
+We can see that not all of the predictors are significant for predicting birthweight. Going forward let's include:  `babysex`, `delwt`, `fincome`, `frace`, `gaweeks`, `mheight`, `momage`, `mrace`, `ppbmi`, `ppwt`, `smoken`, and `wtgain`.
+
+Now let's make a multiple regression model with those predictors. Then we can see if there are any confouding variables.
+
+```{r}
+mlr_bwt_mod = 
+  birthweight_df |>
+  lm(bwt ~ babysex + delwt + fincome + frace + gaweeks + mheight + momage + mrace + ppbmi + ppwt + smoken + wtgain, data = _) |>
+  broom::tidy()
+
+ggplotly(mlr_bwt_mod |>
+  ggplot(aes(x = term, y = log(p.value))) +
+  geom_point() +
+  geom_hline(yintercept = log(0.05)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)))
+```
+
+It looks like there may have been some cofounding variables. maybe `frace` and `mrace` are cancelling out? Let's try again with only `mrace`. 
+
+```{r}
+mlr_bwt_mod = 
+  birthweight_df |>
+  lm(bwt ~ babysex + delwt + fincome  + gaweeks + mheight + momage + mrace + ppbmi + ppwt + smoken + wtgain, data = _) 
+
+ggplotly(mlr_bwt_mod |>
+           broom::tidy() |>
+  ggplot(aes(x = term, y = log(p.value))) +
+  geom_point() +
+  geom_hline(yintercept = log(0.05)) +
+  theme(axis.text.x = element_text(angle = 45, hjust = 1)))
+```
+
+Hmm, I'm not really sure what to do now. Let's try adding predictions for the models.
+
+```{r}
+birthweight_df |>
+  add_predictions(mlr_bwt_mod) |>
+  add_residuals(mlr_bwt_mod)|>
+  ggplot(aes(x = fitted, y = residuals)) +
   geom_point()
+```
+
+Ok!! so I still don't really know what's going on lol.
+
+But let's try to do the part where I compare to the other two models.
+
+Compare your model to two others:
+
+One using length at birth and gestational age as predictors (main effects only)
+One using head circumference, length, sex, and all interactions (including the three-way interaction) between these
+```{r}
+length_age_mod = lm(bwt ~ blength + gaweeks, data = birthweight_df)
+
+interaction_mod = lm(bwt ~ babysex * blength * bhead, data = birthweight_df)
+
+birthweight_df |>
+  gather_predictions(length_age_mod, interaction_mod) |> 
+  mutate(model = fct_inorder(model)) |> 
+  ggplot(aes(x = babysex, y = bwt)) + 
+  geom_point() + 
+  geom_line(aes(y = pred), color = "red") + 
+  facet_wrap(~model)
+  
 ```
 

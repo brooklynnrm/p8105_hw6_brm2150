@@ -73,7 +73,8 @@ citywide_odds =
   filter(term == "victim_sexMale")
 
 citywide_odds |>
-  ggplot(aes(x = factor(city_state, levels = citywide_odds$city_state[order(citywide_odds$estimate)]), y = estimate))+
+  mutate(city_state = factor(city_state, levels = citywide_odds$city_state[order(citywide_odds$estimate)])) |>
+  ggplot(aes(x = city_state, y = estimate)) +
   geom_point() +
   geom_errorbar(aes(ymin = conf.low, ymax = conf.high)) +
   geom_hline(yintercept = 1, linetype = "dashed", color = "red") +
@@ -87,10 +88,55 @@ It looks like most cities have a higher ratio of homicides of men getting solved
 
 ## Problem 3
 
-Read in the birthweight data. 
+Read in the birth weight data. 
 
 ```{r}
 birthweight_df = 
-  read_csv("data/birthweight.csv")
+  read_csv("data/birthweight.csv") |>
+  mutate(across(c("babysex", "frace", "malform", "mrace"), factor))
+
+any(is.na(birthweight_df))
+```
+
+Let's take a quick look at the data. It's normally distributed. 
+```{r}
+birthweight_df |>
+  ggplot(aes(x = bwt)) +
+  geom_histogram()
+```
+
+Let's make some linear models for each of the variables.
+
+```{r}
+birthweight_df |>
+  lm(bwt ~ fincome, data = _) |>
+  broom::tidy()
+```
+
+Now repeat for all predictors.
+
+```{r}
+predictors = 
+  birthweight_df |> 
+  select(-bwt) |>
+  colnames() 
+
+single_mod_results = 
+  map(predictors, ~ {
+  formula = as.formula(paste("bwt ~", .x))
+  lm(formula, data = birthweight_df) |>
+    broom::tidy() |>
+    mutate(predictor = .x)  # Add column to identify predictor
+}) |>
+  bind_rows()|>
+  filter(term != "(Intercept)")
+```
+
+Let's look at how all of the predictors did.
+
+```{r}
+single_mod_results |>
+  ggplot(aes(x = term, y = log(p.value))) +
+  geom_point()
 ```
 
